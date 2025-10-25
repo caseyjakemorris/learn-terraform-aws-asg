@@ -38,12 +38,13 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-resource "aws_launch_configuration" "terramino" {
-  name_prefix     = "learn-terraform-aws-asg-"
-  image_id        = data.aws_ami.amazon_linux.id
-  instance_type   = "t2.micro"
-  user_data       = file("user-data.sh")
-  security_groups = [aws_security_group.terramino_instance.id]
+resource "aws_launch_template" "terramino" {
+  name_prefix   = "learn-terraform-aws-asg-"
+  image_id      = data.aws_ami.amazon_linux.id
+  instance_type = "t2.micro"
+  user_data     = base64encode(file("user-data.sh"))
+  
+  vpc_security_group_ids = [aws_security_group.terramino_instance.id]
 
   lifecycle {
     create_before_destroy = true
@@ -51,14 +52,19 @@ resource "aws_launch_configuration" "terramino" {
 }
 
 resource "aws_autoscaling_group" "terramino" {
-  name                 = "terramino"
-  min_size             = 1
-  max_size             = 3
-  desired_capacity     = 1
-  launch_configuration = aws_launch_configuration.terramino.name
-  vpc_zone_identifier  = module.vpc.public_subnets
+  name                = "terramino"
+  min_size            = 1
+  max_size            = 3
+  desired_capacity    = 1
+  vpc_zone_identifier = module.vpc.public_subnets
+  target_group_arns   = [aws_lb_target_group.terramino.arn]
 
-  health_check_type    = "ELB"
+  launch_template {
+    id      = aws_launch_template.terramino.id
+    version = "$Latest"
+  }
+
+  health_check_type = "ELB"
 
   tag {
     key                 = "Name"
@@ -91,12 +97,6 @@ resource "aws_lb_target_group" "terramino" {
   port     = 80
   protocol = "HTTP"
   vpc_id   = module.vpc.vpc_id
-}
-
-
-resource "aws_autoscaling_attachment" "terramino" {
-  autoscaling_group_name = aws_autoscaling_group.terramino.id
-  alb_target_group_arn    = aws_lb_target_group.terramino.arn
 }
 
 resource "aws_security_group" "terramino_instance" {
