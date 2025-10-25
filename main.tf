@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 provider "aws" {
-  region = "us-east-2"
+  region = "eu-west-1"
 
   default_tags {
     tags = {
@@ -62,6 +62,10 @@ resource "aws_autoscaling_group" "terramino" {
   launch_template {
     id      = aws_launch_template.terramino.id
     version = "$Latest"
+  }
+
+  lifecycle {
+    ignore_changes = [desired_capacity, target_group_arns]
   }
 
   health_check_type = "ELB"
@@ -136,3 +140,29 @@ resource "aws_security_group" "terramino_lb" {
 
   vpc_id = module.vpc.vpc_id
 }
+
+resource "aws_autoscaling_policy" "scale_down" {
+  name                   = "terramino_scale_down"
+  autoscaling_group_name = aws_autoscaling_group.terramino.name
+  adjustment_type        = "ChangeInCapacity"
+  scaling_adjustment     = -1
+  cooldown               = 120
+}
+
+resource "aws_cloudwatch_metric_alarm" "scale_down" {
+  alarm_description   = "Monitors CPU utilization for Terramino ASG"
+  alarm_actions       = [aws_autoscaling_policy.scale_down.arn]
+  alarm_name          = "terramino_scale_down"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  namespace           = "AWS/EC2"
+  metric_name         = "CPUUtilization"
+  threshold           = "10"
+  evaluation_periods  = "2"
+  period              = "120"
+  statistic           = "Average"
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.terramino.name
+  }
+}
+
